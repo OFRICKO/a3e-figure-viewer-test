@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>A3E Figure Viewer</title>
+
+<style>
+body{
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    background-color: #2a2a2a;
+    background-image: url("logo.jpg");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 120vw;
+    background-attachment: fixed;
+}
+
+#viewer{
+    width: 1000px;
+    margin: auto;
+    background: rgba(58,58,58,0.92);
+    padding: 20px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.45);
+    position: relative;
+}
+
+#headerBar{
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    background-image: url("backsplash.jpg");
+    background-size: cover;
+    background-position: center;
+    padding: 20px 24px;
+    margin-bottom: 18px;
+    border-radius: 6px;
+    min-height: 120px;
+}
+
+#headerTitle{
+    color: white;
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-shadow:
+        0 2px 6px rgba(0,0,0,0.85),
+        0 0 18px rgba(0,0,0,0.6);
+}
+
+#toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+}
+
+#figureSelect{
+    font-size: 18px;
+    padding: 12px 16px;
+    background: #555;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    width: 320px;
+}
+
+#zoomControls{
+    display:flex;
+    gap:10px;
+}
+
+.zoomBtn{
+    font-size:16px;
+    padding:10px 14px;
+    background:#555;
+    color:white;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+
+.zoomBtn:hover{
+    background:#666;
+}
+
+#mapViewport{
+    position: relative;
+    overflow: hidden;
+    background: #2f2f2f;
+    cursor: grab;
+}
+
+#mapViewport.dragging{
+    cursor: grabbing;
+}
+
+#mapStage{
+    position: relative;
+    transform-origin: top left;
+    will-change: transform;
+}
+
+#mapImage{
+    width: 100%;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: auto;
+}
+
+.photoPoint{
+    position:absolute;
+    width:18px;
+    height:18px;
+    background:transparent;
+    transform:translate(-50%,-50%);
+    cursor:pointer;
+}
+
+#photoOverlay{
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.75);
+    z-index: 9999;
+}
+
+#photoPopup{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    background: transparent;
+    padding: 0;
+    max-width: 95vw;
+    max-height: 95vh;
+}
+
+#photoPopup img{
+    display: block;
+    max-width: 95vw;
+    max-height: 95vh;
+    box-shadow: 0 0 30px rgba(0,0,0,0.6);
+}
+
+#closeButton{
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #333;
+}
+</style>
+</head>
+
+<body>
+
+<div id="viewer">
+
+    <div id="headerBar">
+        <div id="headerTitle">A3E Figure Viewer</div>
+    </div>
+
+    <div id="toolbar">
+        <select id="figureSelect">
+            <option value="Figures/figure1.jpg">Figure 1 – Topographic Map</option>
+            <option value="Figures/figure2.jpg">Figure 2 – Site Area Map</option>
+            <option value="Figures/figure3.jpg">Figure 3 – Site Detail Map</option>
+        </select>
+
+        <div id="zoomControls">
+            <button class="zoomBtn" id="zoomOutBtn">−</button>
+            <button class="zoomBtn" id="zoomInBtn">+</button>
+            <button class="zoomBtn" id="resetBtn">Reset</button>
+        </div>
+    </div>
+
+    <div id="mapViewport">
+        <div id="mapStage">
+            <img id="mapImage" src="Figures/figure1.jpg" alt="Figure">
+        </div>
+    </div>
+
+</div>
+
+<div id="photoOverlay">
+    <div id="photoPopup">
+        <div id="closeButton">&times;</div>
+        <img id="photoImage" src="" alt="Photo">
+    </div>
+</div>
+
+<script>
+const figureSelect = document.getElementById("figureSelect");
+const mapImage = document.getElementById("mapImage");
+const mapStage = document.getElementById("mapStage");
+const mapViewport = document.getElementById("mapViewport");
+const photoOverlay = document.getElementById("photoOverlay");
+const photoImage = document.getElementById("photoImage");
+const closeButton = document.getElementById("closeButton");
+const zoomInBtn = document.getElementById("zoomInBtn");
+const zoomOutBtn = document.getElementById("zoomOutBtn");
+const resetBtn = document.getElementById("resetBtn");
+
+const photoPoints = [
+    { id:"P001", x:"69.92%", y:"10.08%", photo:"Photos/P001.jpg" },
+    { id:"P002", x:"59.92%", y:"10.24%", photo:"Photos/P002.jpg" },
+    { id:"P003", x:"93.73%", y:"70.22%", photo:"Photos/P003.jpg" }
+];
+
+let scale = 1;
+let minScale = 1;
+let maxScale = 5;
+let translateX = 0;
+let translateY = 0;
+let isDragging = false;
+let startX = 0;
+let startY = 0;
+
+function applyTransform(){
+    mapStage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+}
+
+function resetView(){
+    scale = 1;
+    translateX = 0;
+    translateY = 0;
+    applyTransform();
+}
+
+function zoomAt(factor, centerX, centerY){
+    const newScale = Math.max(minScale, Math.min(maxScale, scale * factor));
+    const actualFactor = newScale / scale;
+    if (actualFactor === 1) return;
+
+    translateX = centerX - (centerX - translateX) * actualFactor;
+    translateY = centerY - (centerY - translateY) * actualFactor;
+    scale = newScale;
+    applyTransform();
+}
+
+function openPhoto(photoPath){
+    photoImage.src = photoPath;
+    photoOverlay.style.display = "block";
+}
+
+function closePhoto(){
+    photoOverlay.style.display = "none";
+}
+
+function buildPoints(){
+    document.querySelectorAll(".photoPoint").forEach(p => p.remove());
+
+    if (figureSelect.value !== "Figures/figure3.jpg"){
+        return;
+    }
+
+    photoPoints.forEach(point => {
+        const dot = document.createElement("div");
+        dot.className = "photoPoint";
+        dot.style.left = point.x;
+        dot.style.top = point.y;
+
+        dot.onclick = function(e){
+            e.stopPropagation();
+            openPhoto(point.photo);
+        };
+
+        mapStage.appendChild(dot);
+    });
+}
+
+figureSelect.addEventListener("change", function(){
+    mapImage.src = this.value;
+    closePhoto();
+    resetView();
+    buildPoints();
+});
+
+zoomInBtn.addEventListener("click", function(){
+    const rect = mapViewport.getBoundingClientRect();
+    zoomAt(1.2, rect.width / 2, rect.height / 2);
+});
+
+zoomOutBtn.addEventListener("click", function(){
+    const rect = mapViewport.getBoundingClientRect();
+    zoomAt(1 / 1.2, rect.width / 2, rect.height / 2);
+});
+
+resetBtn.addEventListener("click", function(){
+    resetView();
+});
+
+mapViewport.addEventListener("wheel", function(e){
+    e.preventDefault();
+    const rect = mapViewport.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+    zoomAt(factor, x, y);
+}, { passive: false });
+
+mapViewport.addEventListener("mousedown", function(e){
+    if (e.target.classList.contains("photoPoint")) return;
+    isDragging = true;
+    mapViewport.classList.add("dragging");
+    startX = e.clientX - translateX;
+    startY = e.clientY - translateY;
+});
+
+window.addEventListener("mousemove", function(e){
+    if (!isDragging) return;
+    translateX = e.clientX - startX;
+    translateY = e.clientY - startY;
+    applyTransform();
+});
+
+window.addEventListener("mouseup", function(){
+    isDragging = false;
+    mapViewport.classList.remove("dragging");
+});
+
+closeButton.addEventListener("click", function(){
+    closePhoto();
+});
+
+photoOverlay.addEventListener("click", function(e){
+    if (e.target === photoOverlay){
+        closePhoto();
+    }
+});
+
+mapImage.addEventListener("click", function(e){
+    if (isDragging) return;
+
+    const rect = mapImage.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width * 100).toFixed(2);
+    const y = ((e.clientY - rect.top) / rect.height * 100).toFixed(2);
+
+    console.log("Photo Point Coordinates → X:", x + "%", "Y:", y + "%");
+});
+
+buildPoints();
+applyTransform();
+</script>
+
+</body>
+</html>
